@@ -1,0 +1,9 @@
+/data/
+/index/
+__pycache__/
+.vscode/
+
+# Python
+*.pyc
+*.pyo
+*.pyd
