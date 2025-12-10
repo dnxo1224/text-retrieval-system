@@ -37,11 +37,10 @@
 │   ├── searcher.py     # 검색 로직 (BM25F Scoring, Query Parsing)
 │   └── tokenizer.py    # 형태소 분석기 래퍼 (Komoran)
 ├── index/              # 생성된 인덱스 파일 저장소 (자동 생성)
-├── data/               # 검색 대상 데이터 폴더 (JSON)
 └── REQUEST.md          # 사용자 요구사항 정의
 ```
 
-## 🚀 사용 방법
+## 사용 방법
 
 ### 1. 환경 설정
 필요한 라이브러리를 설치합니다.
@@ -97,7 +96,7 @@ python main.py
 검색어를 입력하세요: [AND][VERBOSE] 네트워크 보안
 ```
 
-## 📊 인덱스 파일 정보
+## 인덱스 파일 정보
 - **term_dict.json**: 단어별 문서 빈도(DF) 및 포스팅 파일 내 위치 정보
 - **doc_table.json**: 문서 ID 매핑 및 필드별 길이 정보
 - **postings.bin**: 단어별 출현 문서 ID 및 필드별 빈도(TF)를 저장한 이진 파일
