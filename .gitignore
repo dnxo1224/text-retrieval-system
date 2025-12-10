@@ -1,9 +1,14 @@
-/data/
-/index/
-__pycache__/
-.vscode/
+# Ignore everything
+*
 
-# Python
-*.pyc
-*.pyo
-*.pyd
+# Allow directories
+!*/
+
+# Allow specific files
+!main.py
+!README.md
+!.gitignore
+
+# Allow src directory and its python files
+!src/
+!src/*.py

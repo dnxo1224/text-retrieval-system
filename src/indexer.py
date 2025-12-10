@@ -28,44 +28,60 @@ class Indexer:
                 if not f.endswith('.json'):
                     print("not json")
                     continue
-                doc_id += 1 # 0번째 파일부터 시작.
                 file_path = os.path.join(root, f) 
-                doc_table.append({"doc_id": doc_id, "filename": f, "path": file_path}) # doc_table 제작
-                with open(file_path, encoding='utf8') as f: # 파일 열기
-                    data = json.load(f)
+                with open(file_path, encoding='utf8') as json_file: # 파일 열기
+                    try:
+                        data = json.load(json_file)
+                    except json.JSONDecodeError:
+                        print(f"Skipping malformed JSON file: {json_file.name}")
+                        continue
+                        
+                    doc_id += 1 # 성공적으로 읽은 경우에만 doc_id 증가
                     print(f"open file : {doc_id}")
-                    text = data['dataset'].get('invention_title','') + " " + data['dataset'].get('abstract','') + " " + data['dataset'].get('claims','')
-                    sorted_txt = extract_terms(text) # 규칙에 맞게 sort된 단어들 list.
-                    
-                    # 이제 단어들마다 딕셔너리를 만들어야함. 
 
-                    # TF: term frequency (전체 문서 집합에서의 출현 빈도) / 문서 내 중복 값도 넣기
-                    # DF: document frequency (몇 개의 문서에서 사용되었는가?) / 문서 내 중복 값은 하나로
+                    # 필드별 텍스트 추출 (이미 리스트 형태임)
+                    title_txt = extract_terms(data['dataset'].get('invention_title',''))
+                    abstract_txt = extract_terms(data['dataset'].get('abstract',''))
+                    claims_txt = extract_terms(data['dataset'].get('claims',''))
+
+                    # doc_table에 필드별 길이 저장
                     
-                    # 단어별 빈도수 딕셔너리 생성
+                    doc_table.append({
+                        "doc_id": doc_id,
+                        "filename": f,
+                        "path": file_path,
+                        "len_title": len(title_txt),
+                        "len_abstract": len(abstract_txt),
+                        "len_claims": len(claims_txt)
+                    })
+
+                    # 단어별, 필드별 빈도수 계산
+                    # txt_counts 구조: { "term": {"title": 0, "abstract": 0, "claims": 0} }
                     txt_counts = {}
-                    for txt in sorted_txt:
-                        txt_counts[txt] = txt_counts.get(txt, 0) + 1 
-                        # get으로 txt_counts[txt]의 value를 가져오고 + 1. txt라는 키가 안만들어져 있으면 0을 반환하고 + 1
-                        # txt_counts[txt] += 1 <- 이렇게 해버리면 키가 없을때 KeyError를 반환.
-
-                    # txt_counts 의 형태 : {"ai":3, "model:5", "data":7}
                     
-                    for txt,txt_value in txt_counts.items(): # txt_counts에서 df, tf, posting_list 뽑아내기
-                        if not txt in word_dic.keys():
-                            word_dic[txt] = {"df" : 0, "tf" : 0, "posting_list" : []}
-                            
-                        word_dic[txt]["df"] += 1 # txt_counts에 txt가 존재하면 일단 해당 문서에 존재 했다는 것.
+                    for t in title_txt:
+                        if t not in txt_counts: txt_counts[t] = {"title": 0, "abstract": 0, "claims": 0}
+                        txt_counts[t]["title"] += 1
+                        
+                    for t in abstract_txt:
+                        if t not in txt_counts: txt_counts[t] = {"title": 0, "abstract": 0, "claims": 0}
+                        txt_counts[t]["abstract"] += 1
+                        
+                    for t in claims_txt:
+                        if t not in txt_counts: txt_counts[t] = {"title": 0, "abstract": 0, "claims": 0}
+                        txt_counts[t]["claims"] += 1
 
-                        word_dic[txt]["tf"] += txt_value # txt_counts의 value값이 곧 해당 문서의 tf 값.
-
-                        word_dic[txt]["posting_list"].append((doc_id,txt_value)) # doc_id 마다 txt_value 넣기
-
-                    # word_dic 의 형태 : {
-                    # "ai": {"df": 123, “tf”: 4567, “posting_list”:[(doc_0, 12), (doc_1, 34), (doc_23, 2), …] },
-                    # "model":{"df": 256, “tf”: 12349, “posting_list”:[(doc_10, 164), (doc_13, 334), (doc_35, 22), …] },
-                    # "data": {"df": 512,“tf”: 9831, “posting_list”:[(doc_5, 4), (doc_8, 84), (doc_9, 222), …] }, ...
-                    # }
+                    for txt, fields_tf in txt_counts.items():
+                        if txt not in word_dic:
+                            word_dic[txt] = {"df": 0, "tf": 0, "posting_list": []}
+                        
+                        word_dic[txt]["df"] += 1
+                        # 전체 TF는 단순 합 (BM25F에서는 개별 필드 TF가 중요하지만, 통계용으로 합쳐둠)
+                        total_tf = fields_tf["title"] + fields_tf["abstract"] + fields_tf["claims"]
+                        word_dic[txt]["tf"] += total_tf
+                        
+                        # posting_list에 (doc_id, tf_title, tf_abstract, tf_claims) 저장
+                        word_dic[txt]["posting_list"].append((doc_id, fields_tf["title"], fields_tf["abstract"], fields_tf["claims"]))
                     
         for word_dic_txt,word_dic_value in word_dic.items():
             term_postings[word_dic_txt] = word_dic_value["posting_list"]
@@ -77,9 +93,9 @@ class Indexer:
         with open(self.postings_file,'wb') as pbin:
             for term, plist in term_postings.items():
                 start = offset
-                for doc_id, freq in plist:
-                    pbin.write(struct.pack("ii", doc_id, freq))
-                    offset += 8
+                for doc_id, tf_title, tf_abstract, tf_claims in plist: # 필드별로 나눠야 함. 
+                    pbin.write(struct.pack("iiii", doc_id, tf_title, tf_abstract, tf_claims)) 
+                    offset += 16 # postings.bin에 16바이트씩 쓰기 4바이트 값 4개 -> 16바이트임.
                 term_dict[term] = {
                     "df": len(plist),
                     "start": start,
